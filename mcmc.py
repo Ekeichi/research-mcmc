@@ -35,24 +35,43 @@ elev_std = df['d_plus_km'].std()
 X_dist = (df['dist_km'] - dist_mean) / dist_std
 X_elev = (df['d_plus_km'] - elev_mean) / elev_std
 
-with pm.Model() as trail_model_v4:
-    pace_base = pm.Normal('pace_base', mu=6.0, sigma=1.0)
-    effort_dplus = pm.Normal('effort_dplus', mu=5.0, sigma=2.0)
+import pymc as pm
+import numpy as np
+
+with pm.Model() as mixture_trail_model:
+    w = pm.Dirichlet('w', a=np.array([1, 1]))
+
+    pace_base = pm.Normal('pace_base', 
+                          mu=np.array([6.0, 4.8]), 
+                          sigma=np.array([1.0, 0.5]), 
+                          shape=2)
+    
+    effort_dplus = pm.Normal('effort_dplus', 
+                             mu=np.array([9.0, 5.0]), 
+                             sigma=np.array([2.0, 1.0]), 
+                             shape=2)
+    
     beta_fatigue = pm.Normal('beta_fatigue', mu=0.012, sigma=0.003)
     beta_hr = pm.Normal('beta_hr', mu=0, sigma=0.2)
 
-    hr_diff = df['average_heartrate'] - 145
-    dplus_ratio = df['total_elevation_gain'] / (df['dist_km'] * 100 + 1e-5)
+    hr_diff = df['average_heartrate'].values - 145
+    dplus_ratio = df['total_elevation_gain'].values / (df['dist_km'].values * 100 + 1e-5)
     
-    predicted_pace = (pace_base 
-                      + (effort_dplus * dplus_ratio) 
-                      + (beta_fatigue * df['dist_km'])
-                      + (beta_hr * hr_diff))
+    mu_0 = (pace_base[0] + (effort_dplus[0] * dplus_ratio) + 
+            (beta_fatigue * df['dist_km'].values) + (beta_hr * hr_diff)) * df['dist_km'].values
+    
+    mu_1 = (pace_base[1] + (effort_dplus[1] * dplus_ratio) + 
+            (beta_fatigue * df['dist_km'].values) + (beta_hr * hr_diff)) * df['dist_km'].values
 
-    mu_temps = predicted_pace * df['dist_km']
-    
+    mu_combined = pm.math.stack([mu_0, mu_1], axis=1)
+
     sigma = pm.HalfNormal('sigma', sigma=10)
-    y_obs = pm.Normal('y_obs', mu=mu_temps, sigma=sigma, observed=df['minutes'])
+    
+    y_obs = pm.NormalMixture('y_obs', 
+                             w=w, 
+                             mu=mu_combined, 
+                             sigma=sigma, 
+                             observed=df['minutes'].values)
 
     trace = pm.sample(2000, tune=1500, target_accept=0.95)
 
@@ -62,11 +81,11 @@ az.plot_trace(trace)
 az.plot_posterior(trace, var_names=['pace_base', 'effort_dplus', 'beta_fatigue', 'sigma'])
 az.plot_pair(trace, var_names=['pace_base', 'effort_dplus', 'beta_fatigue'], divergences=True)
 
-d_target = 43
+d_target = 79
 d_plus_target = 2200
 
-pace_samples = trace.posterior['pace_base'].values.flatten()
-effort_samples = trace.posterior['effort_dplus'].values.flatten()
+pace_samples = trace.posterior['pace_base'].values[:, :, 1].flatten()
+effort_samples = trace.posterior['effort_dplus'].values[:, :, 1].flatten()
 fatigue_samples = trace.posterior['beta_fatigue'].values.flatten()
 
 dplus_ratio_target = d_plus_target / (d_target * 100)
