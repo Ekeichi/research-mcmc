@@ -35,9 +35,6 @@ elev_std = df['d_plus_km'].std()
 X_dist = (df['dist_km'] - dist_mean) / dist_std
 X_elev = (df['d_plus_km'] - elev_mean) / elev_std
 
-import pymc as pm
-import numpy as np
-
 with pm.Model() as mixture_trail_model:
     w = pm.Dirichlet('w', a=np.array([1, 1]))
 
@@ -81,8 +78,8 @@ az.plot_trace(trace)
 az.plot_posterior(trace, var_names=['pace_base', 'effort_dplus', 'beta_fatigue', 'sigma'])
 az.plot_pair(trace, var_names=['pace_base', 'effort_dplus', 'beta_fatigue'], divergences=True)
 
-d_target = 79
-d_plus_target = 2200
+d_target = 42
+d_plus_target = 100
 
 pace_samples = trace.posterior['pace_base'].values[:, :, 1].flatten()
 effort_samples = trace.posterior['effort_dplus'].values[:, :, 1].flatten()
